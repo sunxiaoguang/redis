@@ -806,6 +806,87 @@ void hgetallCommand(client *c) {
     genericHgetallCommand(c,OBJ_HASH_KEY|OBJ_HASH_VALUE);
 }
 
+struct genericHgetallContext {
+  int flags;
+  int count;
+  client *c;
+};
+
+static void genericHgetallHashTable(void *privdata, const dictEntry **entries, const int size) {
+    struct genericHgetallContext *ctx = privdata;
+    int idx, flags = ctx->flags;
+    client *c = ctx->c;
+    sds value;
+    for (idx = 0; idx < size; ++idx) {
+        const dictEntry *de = entries[idx];
+        if (flags & OBJ_HASH_KEY) {
+            value = dictGetKey(de);
+            addReplyBulkCBuffer(c, value, sdslen(value));
+        }
+        if (flags & OBJ_HASH_VALUE) {
+            value = dictGetVal(de);
+            addReplyBulkCBuffer(c, value, sdslen(value));
+        }
+    }
+    if (flags & OBJ_HASH_KEY) {
+        ctx->count += size;
+    }
+    if (flags & OBJ_HASH_VALUE) {
+        ctx->count += size;
+    }
+}
+
+void genericHgetalloCommand(client *c, int flags) {
+    robj *o;
+    hashTypeIterator *hi;
+    int multiplier = 0;
+    int length, count = 0;
+
+    if ((o = lookupKeyReadOrReply(c,c->argv[1],shared.emptymultibulk)) == NULL
+        || checkType(c,o,OBJ_HASH)) return;
+
+    if (flags & OBJ_HASH_KEY) multiplier++;
+    if (flags & OBJ_HASH_VALUE) multiplier++;
+
+    length = hashTypeLength(o) * multiplier;
+    addReplyMultiBulkLen(c, length);
+
+    if (o->encoding == OBJ_ENCODING_ZIPLIST) {
+        hi = hashTypeInitIterator(o);
+        while (hashTypeNext(hi) != C_ERR) {
+            if (flags & OBJ_HASH_KEY) {
+                addHashIteratorCursorToReply(c, hi, OBJ_HASH_KEY);
+                count++;
+            }
+            if (flags & OBJ_HASH_VALUE) {
+                addHashIteratorCursorToReply(c, hi, OBJ_HASH_VALUE);
+                count++;
+            }
+        }
+
+        hashTypeReleaseIterator(hi);
+    } else if (o->encoding == OBJ_ENCODING_HT) {
+        struct genericHgetallContext ctx = {flags, 0, c};
+        dictEach(o->ptr, genericHgetallHashTable, &ctx);
+        count = ctx.count;
+    } else {
+        serverPanic("Unknown hash encoding");
+    }
+    serverAssert(count == length);
+}
+
+void hkeysoCommand(client *c) {
+    genericHgetalloCommand(c,OBJ_HASH_KEY);
+}
+
+void hvalsoCommand(client *c) {
+    genericHgetalloCommand(c,OBJ_HASH_VALUE);
+}
+
+void hgetalloCommand(client *c) {
+    genericHgetalloCommand(c, OBJ_HASH_KEY|OBJ_HASH_VALUE);
+}
+
 void hexistsCommand(client *c) {
     robj *o;
     if ((o = lookupKeyReadOrReply(c,c->argv[1],shared.czero)) == NULL ||
