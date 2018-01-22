@@ -1278,6 +1278,9 @@ void createSharedObjects(void) {
     shared.emptymultibulk = createObject(OBJ_STRING,sdsnew("*0\r\n"));
     shared.pong = createObject(OBJ_STRING,sdsnew("+PONG\r\n"));
     shared.queued = createObject(OBJ_STRING,sdsnew("+QUEUED\r\n"));
+    shared.set = createObject(OBJ_STRING,sdsnew("SET"));
+    shared.hset = createObject(OBJ_STRING,sdsnew("HSET"));
+    shared.zadd = createObject(OBJ_STRING,sdsnew("ZADD"));
     shared.emptyscan = createObject(OBJ_STRING,sdsnew("*2\r\n$1\r\n0\r\n*0\r\n"));
     shared.wrongtypeerr = createObject(OBJ_STRING,sdsnew(
         "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n"));

@@ -1486,7 +1486,7 @@ long zsetRank(robj *zobj, sds ele, int reverse) {
 void zaddGenericCommand(client *c, int flags) {
     static char *nanerr = "resulting score is not a number (NaN)";
     robj *key = c->argv[1];
-    robj *zobj;
+    robj *zobj, *rewritescore;
     sds ele;
     double score = 0, *scores = NULL;
     int j, elements;
@@ -1588,9 +1588,17 @@ void zaddGenericCommand(client *c, int flags) {
 
 reply_to_client:
     if (incr) { /* ZINCRBY or INCR option. */
-        if (processed)
+        if (processed) {
             addReplyDouble(c,score);
-        else
+            rewritescore = createStringObjectFromLongDouble(score,1);
+            if (c->argc != 4) { /* INCR option */
+                rewriteClientCommandVector(c, 4, shared.zadd, c->argv[1], rewritescore, c->argv[scoreidx + 1]);
+            } else { /* ZINCRBY */
+                rewriteClientCommandArgument(c, 0, shared.zadd);
+                rewriteClientCommandArgument(c, scoreidx, rewritescore);
+            }
+            decrRefCount(rewritescore);
+        } else
             addReply(c,shared.nullbulk);
     } else { /* ZADD. */
         addReplyLongLong(c,ch ? added+updated : added);

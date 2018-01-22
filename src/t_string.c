@@ -374,6 +374,8 @@ void incrDecrCommand(client *c, long long incr) {
     addReply(c,shared.colon);
     addReply(c,new);
     addReply(c,shared.crlf);
+    rewriteClientCommandArgument(c, 0, shared.set);
+    rewriteClientCommandArgument(c, 2, new);
 }
 
 void incrCommand(client *c) {
@@ -400,7 +402,7 @@ void decrbyCommand(client *c) {
 
 void incrbyfloatCommand(client *c) {
     long double incr, value;
-    robj *o, *new, *aux;
+    robj *o, *new;
 
     o = lookupKeyWrite(c->db,c->argv[1]);
     if (o != NULL && checkType(c,o,OBJ_STRING)) return;
@@ -426,9 +428,7 @@ void incrbyfloatCommand(client *c) {
     /* Always replicate INCRBYFLOAT as a SET command with the final value
      * in order to make sure that differences in float precision or formatting
      * will not create differences in replicas or after an AOF restart. */
-    aux = createStringObject("SET",3);
-    rewriteClientCommandArgument(c,0,aux);
-    decrRefCount(aux);
+    rewriteClientCommandArgument(c,0,shared.set);
     rewriteClientCommandArgument(c,2,new);
 }
 
