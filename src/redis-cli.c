@@ -1794,13 +1794,36 @@ static void latencyDistMode(void) {
 
 /* Sends SYNC and reads the number of bytes in the payload. Used both by
  * slaveMode() and getRDB(). */
-unsigned long long sendSync(int fd) {
+unsigned long long sendSync(int fd, const char *capa) {
     /* To start we need to send the SYNC command and return the payload.
      * The hiredis client lib does not understand this part of the protocol
      * and we don't want to mess with its buffers, so everything is performed
      * using direct low-level I/O. */
     char buf[4096], *p;
     ssize_t nread;
+
+    nread = snprintf(buf, sizeof(buf), "*3\r\n$8\r\nREPLCONF\r\n$4\r\nCAPA\r\n$%zd\r\n%s\r\n", strlen(capa), capa);
+    /* Send the REPLCONF CAPA command. */
+    if (write(fd,buf,nread) != nread) {
+        fprintf(stderr,"Error writing replconf capa %s to master\n", capa);
+        exit(1);
+    }
+    /* Read +OK\r\n, making sure to read just up to "\n" */
+    p = buf;
+    while(1) {
+        nread = read(fd,p,1);
+        if (nread <= 0) {
+            fprintf(stderr,"Error reading simple string while SYNCing\n");
+            exit(1);
+        }
+        if (*p == '\n' && p != buf) break;
+        if (*p != '\n') p++;
+    }
+    *p = '\0';
+    if (buf[0] == '-') {
+        printf("replconf capa %s is not supported by the master, use standard sync instead\n", capa);
+        exit(1);
+    }
 
     /* Send the SYNC command. */
     if (write(fd,"SYNC\r\n",6) != 6) {
@@ -1829,7 +1852,7 @@ unsigned long long sendSync(int fd) {
 
 static void slaveMode(void) {
     int fd = context->fd;
-    unsigned long long payload = sendSync(fd);
+    unsigned long long payload = sendSync(fd, "stream");
     char buf[1024];
     int original_output = config.output;
 
@@ -1864,7 +1887,7 @@ static void slaveMode(void) {
 static void getRDB(void) {
     int s = context->fd;
     int fd;
-    unsigned long long payload = sendSync(s);
+    unsigned long long payload = sendSync(s, "snapshot");
     char buf[4096];
 
     fprintf(stderr,"SYNC sent to master, writing %llu bytes to '%s'\n",

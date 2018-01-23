@@ -304,6 +304,8 @@ typedef long long mstime_t; /* millisecond time type. */
 #define SLAVE_CAPA_NONE 0
 #define SLAVE_CAPA_EOF (1<<0)    /* Can parse the RDB EOF streaming format. */
 #define SLAVE_CAPA_PSYNC2 (1<<1) /* Supports PSYNC2 protocol. */
+#define SLAVE_CAPA_SNAPSHOT (1<<2) /* Slave expects SNAPSHOT only */
+#define SLAVE_CAPA_REPLICATION_STREAM (1<<3) /* Slave expects replication stream only */
 
 /* Synchronous read timeout - slave side */
 #define CONFIG_REPL_SYNCIO_TIMEOUT 5

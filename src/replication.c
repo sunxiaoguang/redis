@@ -258,6 +258,9 @@ void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc) {
         /* Don't feed slaves that are still waiting for BGSAVE to start */
         if (slave->replstate == SLAVE_STATE_WAIT_BGSAVE_START) continue;
 
+        /* Don't feed slaves that ask for snapshot only */
+        if (slave->slave_capa & SLAVE_CAPA_SNAPSHOT) continue;
+
         /* Feed slaves that are waiting for the initial SYNC (so these commands
          * are queued in the output buffer until the initial SYNC completes),
          * or are already in sync with the master. */
@@ -698,6 +701,14 @@ void syncCommand(client *c) {
         createReplicationBacklog();
     }
 
+    /* put slave online if it only wants replication stream */
+    if (c->slave_capa & SLAVE_CAPA_REPLICATION_STREAM) {
+        /* send zero length snapshot and put it online immediately */
+        addReplyString(c, "$0\r\n", 4);
+        putSlaveOnline(c);
+        return;
+    }
+
     /* CASE 1: BGSAVE is in progress, with disk target. */
     if (server.rdb_child_pid != -1 &&
         server.rdb_child_type == RDB_CHILD_TYPE_DISK)
@@ -807,6 +818,10 @@ void replconfCommand(client *c) {
                 c->slave_capa |= SLAVE_CAPA_EOF;
             else if (!strcasecmp(c->argv[j+1]->ptr,"psync2"))
                 c->slave_capa |= SLAVE_CAPA_PSYNC2;
+            else if (!strcasecmp(c->argv[j+1]->ptr, "snapshot"))
+                c->slave_capa |= SLAVE_CAPA_SNAPSHOT;
+            else if (!strcasecmp(c->argv[j+1]->ptr, "stream"))
+                c->slave_capa |= SLAVE_CAPA_REPLICATION_STREAM;
         } else if (!strcasecmp(c->argv[j]->ptr,"ack")) {
             /* REPLCONF ACK is used by slave to inform the master the amount
              * of replication stream that it processed so far. It is an
@@ -856,6 +871,11 @@ void putSlaveOnline(client *slave) {
     slave->replstate = SLAVE_STATE_ONLINE;
     slave->repl_put_online_on_ack = 0;
     slave->repl_ack_time = server.unixtime; /* Prevent false timeout. */
+    if (slave->slave_capa & SLAVE_CAPA_SNAPSHOT) {
+        serverLog(LL_NOTICE,"Snapshot sent to slave %s", replicationGetSlaveName(slave));
+        freeClientAsync(slave);
+        return;
+    }
     if (aeCreateFileEvent(server.el, slave->fd, AE_WRITABLE,
         sendReplyToClient, slave) == AE_ERR) {
         serverLog(LL_WARNING,"Unable to register writable event for slave bulk transfer: %s", strerror(errno));
